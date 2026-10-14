@@ -1,0 +1,12 @@
+{
+  "name": "OTIVO AI Dev System",
+  "description": "OTIVO Senior Lead Engineer: Autonomous Project Management, Full-Stack Development, and Multi-Stack Engineering. Managing lifecycle from planning to debugging.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

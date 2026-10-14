@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
+    <title>OTIVO AI</title>
+    <link rel="icon" href="logo.png" type="image/png">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#151619">
+    <link rel="apple-touch-icon" href="logo.png">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+    <script src="coi-serviceworker.js"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('sw.js').then(registration => {
+            console.log('SW registered: ', registration);
+          }).catch(registrationError => {
+            console.log('SW registration failed: ', registrationError);
+          });
+        });
+      }
+    </script>
+    <style>
+      :root {
+          --bg-color: #050507;
+          --ai-cyan: #00f2ff;
+          --ai-purple: #7000ff;
+          --code-green: #3b82f6;
+          --neural-gray: rgba(255, 255, 255, 0.03);
+      }
+
+      #preloader-body {
+          margin: 0;
+          padding: 0;
+          min-height: 100vh;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          background-color: var(--bg-color);
+          font-family: 'JetBrains Mono', 'Fira Code', monospace;
+          overflow: hidden;
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 9999;
+      }
+
+      /* Neural Network Background Effect */
+      .neural-grid {
+          position: absolute;
+          width: 100%;
+          height: 100%;
+          background-image: 
+              radial-gradient(circle at 2px 2px, var(--neural-gray) 1px, transparent 0);
+          background-size: 40px 40px;
+          z-index: 0;
+      }
+
+      .loader-wrapper {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+      }
+
+      /* The AI Hub Core */
+      .ai-core {
+          position: absolute;
+          width: 400px;
+          height: 400px;
+          max-width: 80vw;
+          max-height: 80vw;
+          background: radial-gradient(circle, rgba(0, 242, 255, 0.05) 0%, transparent 70%);
+          border-radius: 50%;
+          animation: core-pulse 4s ease-in-out infinite;
+      }
+
+      @keyframes core-pulse {
+          0%, 100% { transform: scale(1); opacity: 0.3; }
+          50% { transform: scale(1.2); opacity: 0.6; }
+      }
+
+      /* OTIVO Brand Assembly */
+      .brand-svg {
+          width: 450px;
+          max-width: 90vw;
+          height: auto;
+          overflow: visible;
+      }
+
+      .letter {
+          fill: none;
+          stroke-width: 2.5;
+          stroke-linecap: round;
+          stroke-linejoin: round;
+      }
+
+      /* Ghost Path (The blueprint) */
+      .ghost {
+          stroke: rgba(255, 255, 255, 0.1);
+      }
+
+      /* Active Path (The AI "Building" the letter) */
+      .build-path {
+          stroke: url(#ai-gradient);
+          stroke-dasharray: 120 400;
+          stroke-dashoffset: 520;
+          animation: build 3s linear infinite;
+          filter: drop-shadow(0 0 5px var(--ai-cyan));
+      }
+
+      @keyframes build {
+          0% { stroke-dashoffset: 520; }
+          100% { stroke-dashoffset: 0; }
+      }
+
+      /* Staggered Delays for Assembly */
+      .l-1 { animation-delay: 0.0s; }
+      .l-2 { animation-delay: 0.2s; }
+      .l-3 { animation-delay: 0.4s; }
+      .l-4 { animation-delay: 0.6s; }
+      .l-5 { animation-delay: 0.8s; }
+
+      /* AI Code Stream */
+      .code-stream {
+          margin-top: 40px;
+          font-size: 11px;
+          color: var(--code-green);
+          text-transform: uppercase;
+          letter-spacing: 2px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+      }
+
+      .cursor {
+          width: 8px;
+          height: 14px;
+          background: var(--code-green);
+          margin-left: 5px;
+          animation: blink 0.8s steps(2) infinite;
+      }
+
+      @keyframes blink {
+          50% { opacity: 0; }
+      }
+
+      /* "Compiling" Particles */
+      .particle {
+          position: absolute;
+          width: 3px;
+          height: 3px;
+          background: var(--ai-cyan);
+          border-radius: 50%;
+          pointer-events: none;
+          z-index: -1;
+          box-shadow: 0 0 10px var(--ai-cyan);
+      }
+
+      @keyframes scatter {
+          0% {
+              transform: translate(-50%, -50%) scale(0);
+              opacity: 0;
+          }
+          20% {
+              opacity: 1;
+          }
+          100% {
+              transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(1);
+              opacity: 0;
+          }
+      }
+
+      @media (max-width: 768px) {
+          .brand-svg {
+              width: 280px;
+          }
+          .ai-core {
+              width: 250px;
+              height: 250px;
+          }
+          .code-stream {
+              font-size: 9px;
+              letter-spacing: 1px;
+          }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="preloader-body">
+      <div class="neural-grid"></div>
+      <div class="ai-core"></div>
+
+      <div class="loader-wrapper" id="particles-container">
+          <svg class="brand-svg" viewBox="0 0 500 100">
+              <defs>
+                  <linearGradient id="ai-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stop-color="#00f2ff" />
+                      <stop offset="100%" stop-color="#7000ff" />
+                  </linearGradient>
+              </defs>
+
+              <g transform="translate(90, 50)">
+                  <circle class="letter ghost" r="35" />
+                  <circle class="letter build-path l-1" r="35" pathLength="520" />
+              </g>
+
+              <g transform="translate(170, 50)">
+                  <path class="letter ghost" d="M -30,-30 H 30 M 0,-30 V 35" />
+                  <path class="letter build-path l-2" d="M -30,-30 H 30 M 0,-30 V 35" pathLength="520" />
+              </g>
+
+              <g transform="translate(250, 50)">
+                  <path class="letter ghost" d="M 0,-30 V 35" />
+                  <path class="letter build-path l-3" d="M 0,-30 V 35" pathLength="520" />
+              </g>
+
+              <g transform="translate(330, 50)">
+                  <path class="letter ghost" d="M -30,-30 L 0,35 L 30,-30" />
+                  <path class="letter build-path l-4" d="M -30,-30 L 0,35 L 30,-30" pathLength="520" />
+              </g>
+
+              <g transform="translate(410, 50)">
+                  <circle class="letter ghost" r="35" />
+                  <circle class="letter build-path l-5" r="35" pathLength="520" />
+              </g>
+          </svg>
+
+          <div class="code-stream" id="code-text">Initialising AI engine...</div>
+          <div class="cursor"></div>
+          
+          <button id="force-open-btn" style="margin-top: 20px; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.3); padding: 5px 15px; border-radius: 4px; font-size: 10px; cursor: pointer; transition: all 0.3s; opacity: 0;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0'">
+            FORCE OPEN
+          </button>
+      </div>
+    </div>
+    <div id="root"></div>
+    <script>
+        const texts = [
+            "Neural Architecture Loading...",
+            "Compiling UI Components...",
+            "Syncing App Logic...",
+            "Optimizing Codebase...",
+            "Building OTIVO Hub..."
+        ];
+        let i = 0;
+        const textElement = document.getElementById('code-text');
+        
+        if (textElement) {
+          setInterval(() => {
+              i = (i + 1) % texts.length;
+              textElement.innerText = texts[i];
+          }, 2000);
+        }
+
+        const forceBtn = document.getElementById('force-open-btn');
+        if (forceBtn) {
+          forceBtn.onclick = () => removePreloader();
+          // Show button after 10 seconds if still loading
+          setTimeout(() => {
+            forceBtn.style.opacity = '0.5';
+            forceBtn.onmouseout = () => forceBtn.style.opacity = '0.5';
+          }, 10000);
+        }
+
+        // Generate dynamic scatter particles
+        const container = document.getElementById('particles-container');
+        function createParticle() {
+            if (!container) return;
+            const p = document.createElement('div');
+            p.className = 'particle';
+            
+            // Random direction and distance
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 150 + Math.random() * 250;
+            const tx = Math.cos(angle) * distance;
+            const ty = Math.sin(angle) * distance;
+            
+            p.style.setProperty('--tx', `${tx}px`);
+            p.style.setProperty('--ty', `${ty}px`);
+            p.style.left = '50%';
+            p.style.top = '50%';
+            
+            const duration = 2 + Math.random() * 2;
+            p.style.animation = `scatter ${duration}s ease-out forwards`;
+            
+            container.appendChild(p);
+            
+            // Cleanup
+            setTimeout(() => p.remove(), duration * 1000);
+        }
+
+        // Continuous spawning
+        const particleInterval = setInterval(createParticle, 100);
+
+        // Preloader removal logic
+        const removePreloader = () => {
+            const preloader = document.getElementById('preloader-body');
+            if (preloader) {
+                preloader.style.transition = 'opacity 0.5s ease-out';
+                preloader.style.opacity = '0';
+                setTimeout(() => {
+                    preloader.remove();
+                }, 500);
+            }
+        };
+
+        window.addEventListener('load', () => {
+            // If we're already isolated, remove faster. 
+            // Otherwise wait a bit for the potential reload in main.tsx
+            const delay = window.crossOriginIsolated ? 1000 : 3000;
+            setTimeout(removePreloader, delay);
+        });
+
+        // Expose a global to allow React to trigger removal if needed
+        window.forceRemovePreloader = removePreloader;
+    </script>
+    <script type="module" src="src/main.tsx"></script>
+  </body>
+</html>
+

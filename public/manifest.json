@@ -1,0 +1,35 @@
+{
+  "name": "OTIVO AI Dev ",
+  "short_name": "OTIVO AI",
+  "description": "AI Debugging + Safe Project Preview Platform. Scan, analyze, and fix code with design protection.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#151619",
+  "theme_color": "#151619",
+  "icons": [
+    {
+      "src": "logo1.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "logo1.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "logo1.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "logo1.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
