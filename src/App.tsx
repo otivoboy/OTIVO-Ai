@@ -19,18 +19,17 @@ export default function App() {
   const [showVoiceAssistant, setShowVoiceAssistant] = React.useState(false);
   const [showEnvDialog, setShowEnvDialog] = React.useState(false);
 
-  // Check for API keys on mount
+  // Check for API configuration on mount
   React.useEffect(() => {
     (window as any).forceRemovePreloader?.();
-    const keys = [
-      process.env.GEMINI_API_KEY,
-      (import.meta as any).env?.VITE_GEMINI_API_KEY,
-      localStorage.getItem('VITE_GEMINI_API_KEY')
-    ].filter(Boolean);
-    
-    if (keys.length === 0) {
-      setShowEnvDialog(true);
-    }
+    fetch('/api/config')
+      .then(res => res.json())
+      .then(data => {
+        if (data.GEMINI_API_KEY) {
+          setRuntimeApiKey(data.GEMINI_API_KEY);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Handle routing based on hash - Simplified for Assistant only

@@ -20,12 +20,12 @@ export default defineConfig(({mode}) => {
       }),
     ],
     define: {
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY_1': JSON.stringify(env.GEMINI_API_KEY_1),
-      'process.env.GEMINI_API_KEY_2': JSON.stringify(env.GEMINI_API_KEY_2),
-      'process.env.GEMINI_API_KEY_3': JSON.stringify(env.GEMINI_API_KEY_3),
-      'process.env.GEMINI_API_KEY_4': JSON.stringify(env.GEMINI_API_KEY_4),
-      'process.env.GEMINI_API_KEY_5': JSON.stringify(env.GEMINI_API_KEY_5),
+      'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || ''),
+      'process.env.GEMINI_API_KEY_1': JSON.stringify(process.env.GEMINI_API_KEY_1 || env.GEMINI_API_KEY_1 || ''),
+      'process.env.GEMINI_API_KEY_2': JSON.stringify(process.env.GEMINI_API_KEY_2 || env.GEMINI_API_KEY_2 || ''),
+      'process.env.GEMINI_API_KEY_3': JSON.stringify(process.env.GEMINI_API_KEY_3 || env.GEMINI_API_KEY_3 || ''),
+      'process.env.GEMINI_API_KEY_4': JSON.stringify(process.env.GEMINI_API_KEY_4 || env.GEMINI_API_KEY_4 || ''),
+      'process.env.GEMINI_API_KEY_5': JSON.stringify(process.env.GEMINI_API_KEY_5 || env.GEMINI_API_KEY_5 || ''),
     },
     resolve: {
       alias: {

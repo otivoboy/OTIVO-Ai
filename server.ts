@@ -8,6 +8,7 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import chokidar from "chokidar";
 import dotenv from "dotenv";
+import aiRouter from "./src/server/aiRouter";
 
 dotenv.config();
 
@@ -385,6 +386,22 @@ async function startServer() {
   app.get("/api/project", (req, res) => {
     res.json({ files: lastProjectFiles, isRunning: !!devProcess });
   });
+
+  // API config route for runtime parameters
+  app.get("/api/config", (req, res) => {
+    res.json({
+      GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
+      GEMINI_API_KEY_1: process.env.GEMINI_API_KEY_1 || '',
+      GEMINI_API_KEY_2: process.env.GEMINI_API_KEY_2 || '',
+      GEMINI_API_KEY_3: process.env.GEMINI_API_KEY_3 || '',
+      GEMINI_API_KEY_4: process.env.GEMINI_API_KEY_4 || '',
+      GEMINI_API_KEY_5: process.env.GEMINI_API_KEY_5 || '',
+      SERPER_API_KEY: process.env.VITE_SERPER_API_KEY || '',
+    });
+  });
+
+  // Mount AI server-side routes
+  app.use("/api/ai", aiRouter);
 
   // API to build and run the project
   app.post("/api/build", async (req, res) => {

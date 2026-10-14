@@ -16,7 +16,7 @@ interface VoiceAssistantModalProps {
 }
 
 // Global API Keys and URLs
-let SERPER_API_KEY = (import.meta as any).env?.VITE_SERPER_API_KEY || '7b1c8f10b05978a64f04b36c3bf0659b7be129ac';
+let SERPER_API_KEY = (import.meta as any).env?.VITE_SERPER_API_KEY || '';
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent';
 
 // Update from server if possible

@@ -17,6 +17,27 @@ const API_KEYS = [
   typeof window !== 'undefined' ? localStorage.getItem('VITE_GEMINI_API_KEY') : null,
 ].filter(Boolean) as string[];
 
+if (typeof window !== 'undefined') {
+  fetch('/api/config')
+    .then((res) => res.json())
+    .then((data) => {
+      const serverKeys = [
+        data.GEMINI_API_KEY,
+        data.GEMINI_API_KEY_1,
+        data.GEMINI_API_KEY_2,
+        data.GEMINI_API_KEY_3,
+        data.GEMINI_API_KEY_4,
+        data.GEMINI_API_KEY_5,
+      ].filter(Boolean);
+      for (const k of serverKeys) {
+        if (!API_KEYS.includes(k)) {
+          API_KEYS.push(k);
+        }
+      }
+    })
+    .catch(() => {});
+}
+
 export function setRuntimeApiKey(key: string) {
   if (key && !API_KEYS.includes(key)) {
     API_KEYS.push(key);
@@ -26,7 +47,7 @@ export function setRuntimeApiKey(key: string) {
 }
 
 if (API_KEYS.length === 0) {
-  console.warn("[OTIVO] No Gemini API keys found in environment variables. AI features will fail.");
+  console.log("[OTIVO] Loading API configuration...");
 } else {
   console.log(`[OTIVO] Initialized with ${API_KEYS.length} Gemini API keys.`);
 }
@@ -153,56 +174,21 @@ function getFormattedDateTime() {
  */
 export async function generateChatTitle(userPrompt: string, aiResponse: string, attachment?: Attachment): Promise<string> {
   try {
-    return await callWithRetry(async (ai) => {
-      let content: any[] = [];
-      
-      // Multimodal Analysis: Add attachment if present
-      if (attachment) {
-        content.push({
-          inlineData: {
-            data: attachment.data,
-            mimeType: attachment.type
-          }
-        });
-      }
-
-      const promptText = `
-        You are an expert UX micro-copywriter performing Multimodal Intent Analysis. 
-        Analyze the conversation turn (and any attached file) to generate a concise, high-signal title (3–5 words maximum) for the chat history sidebar.
-        
-        RULES:
-        - Identify the primary subject: If it's a code error, mention debugging. If it's a floor plan, mention layout.
-        - OCR Priority: If the image has text/math, prioritize the text content.
-        - Metadata Hints: Use the filename "${attachment?.name || 'N/A'}" as a hint unless it's generic (like 'WhatsApp Image').
-        - Format: No greetings, pleasantries, filler words, or punctuation.
-        - Maximum 25 characters.
-        
-        USER PROMPT: "${userPrompt.slice(0, 500)}"
-        AI RESPONSE: "${aiResponse.slice(0, 500)}"
-        
-        Generate a title that captures the macro objective.
-        Title:`;
-
-      content.push(promptText);
-
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash-exp",
-        contents: content as any,
-        config: {
-          temperature: 0.5,
-          maxOutputTokens: 20,
-        }
-      });
-      const title = (response.text || "").trim().replace(/["']/g, '');
-      
-      // Sanitization: Truncate and strip unwanted chars
-      return title.slice(0, 25).replace(/[.#]$/, '');
+    const userApiKey = typeof window !== 'undefined' ? (localStorage.getItem('VITE_GEMINI_API_KEY') || '') : '';
+    const res = await fetch('/api/ai/title', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userPrompt, aiResponse, attachment, userApiKey })
     });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.title) return data.title;
+    }
   } catch (error) {
     console.warn("[OTIVO] Title generation failed, using fallback.", error);
-    if (attachment) return "File: " + (attachment.name.slice(0, 15));
-    return userPrompt.slice(0, 20) + "...";
   }
+  if (attachment) return "File: " + (attachment.name.slice(0, 15));
+  return userPrompt.slice(0, 20) + "...";
 }
 
 
@@ -359,7 +345,7 @@ export async function fetchWebPage(url: string): Promise<string> {
  * Falls back gracefully when the API key is missing.
  */
 export async function performSerperSearch(query: string): Promise<{ text: string; sources: { title: string; link: string }[] }> {
-  const apiKey = (import.meta as any).env.VITE_SERPER_API_KEY || "7b1c8f10b05978a64f04b36c3bf0659b7be129ac";
+  const apiKey = (import.meta as any).env.VITE_SERPER_API_KEY || "";
   try {
     const res = await fetch('https://google.serper.dev/search', {
       method: 'POST',
@@ -394,26 +380,21 @@ export async function classifyIntent(prompt: string): Promise<'BUILD' | 'CHAT'> 
     return 'CHAT';
   }
   
-  const model = "gemini-3.1-flash-lite";
   try {
-    return await callWithRetry(async (ai, isFallback) => {
-      const response = await ai.models.generateContent({
-        model: isFallback ? "gemini-3.1-flash-lite" : model,
-        contents: `Determine if the following user prompt requires modifying the project files, creating new components, or running terminal commands (BUILD), or if it is just a general question, greeting, or request for information (CHAT).
-        Prompt: "${prompt}"
-        Respond with ONLY "BUILD" or "CHAT".`,
-        config: { 
-          maxOutputTokens: 5
-        },
-      });
-      const result = (response.text || "").trim().toUpperCase();
-      
-      return (result === 'BUILD' || result === 'CHAT') ? result : 'CHAT';
+    const userApiKey = typeof window !== 'undefined' ? (localStorage.getItem('VITE_GEMINI_API_KEY') || '') : '';
+    const res = await fetch('/api/ai/intent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, userApiKey })
     });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.intent === 'BUILD' || data.intent === 'CHAT') return data.intent;
+    }
   } catch (e) {
     console.warn("[OTIVO] Intent classification failed, defaulting to CHAT for safety:", e);
-    return 'CHAT';
   }
+  return 'CHAT';
 }
 
 export interface ResearchSource {
@@ -668,6 +649,21 @@ export async function chatWithAI(
   attachment?: Attachment,
   onResearchStatus?: (status: string | null) => void
 ): Promise<AIResponse> {
+  try {
+    const userApiKey = typeof window !== 'undefined' ? (localStorage.getItem('VITE_GEMINI_API_KEY') || '') : '';
+    const res = await fetch('/api/ai/build-chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, files, history, attachment, userApiKey })
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.message) return data;
+    }
+  } catch (err) {
+    console.warn("[OTIVO] Server build chat failed, falling back:", err);
+  }
+
   const model = "gemini-3.1-flash-lite";
   const fallbackModel = "gemini-3.1-flash-lite"; 
 
@@ -869,81 +865,26 @@ export async function chatWithAI(
 }
 
 export async function generateImage(prompt: string): Promise<string | null> {
-  const models = [
-    "gemini-2.5-flash-image", 
-    "gemini-3.1-flash-image-preview", 
-    "gemini-3-pro-image-preview"
-  ];
-
-  // Brand injection for consistency
-  const enhancedPrompt = `
-    OTIVO BRAND IDENTITY: 
-    - Official Logo Description: A futuristic, minimal AI logo featuring a sharp-edged hexagonal shell. Inside the hexagon is a bold, vertically elongated 'O'.
-    - Brand Vibe: Cinematic high-fidelity, futuristic, technical, professional.
-    - Watermark Rule: Add a subtle, translucent white OTIVO logo (hexagon with 'O') in the bottom-right corner.
-
-    REQUEST: ${prompt}
-  `.trim();
-
-  console.log(`[OTIVO] Generating image for prompt: "${prompt.substring(0, 50)}..."`);
-  
-  for (const model of models) {
-    try {
-      console.log(`[OTIVO] Attempting image generation with model: ${model}`);
-      const data = await callWithRetry(async (ai) => {
-        // Nano Banana models use generateContent for image generation
-        const response = await ai.models.generateContent({
-          model: model,
-          contents: { parts: [{ text: enhancedPrompt }] },
-          config: {
-            imageConfig: {
-              aspectRatio: "1:1",
-              imageSize: "1K"
-            }
-          } as any
-        });
-
-        if (!response.candidates || response.candidates.length === 0) {
-          console.warn(`[OTIVO] No candidates returned from model ${model}`);
-          return null;
-        }
-
-        const candidate = response.candidates[0];
-        if (!candidate.content || !candidate.content.parts) {
-          console.error(`[OTIVO] Candidate content missing for model ${model}`);
-          return null;
-        }
-
-        const imagePart = candidate.content.parts.find((p: any) => p.inlineData);
-        if (imagePart) {
-          console.log(`[OTIVO] Image generation successful with ${model}`);
-          return imagePart.inlineData.data || null;
-        }
-
-        const textPart = candidate.content.parts.find((p: any) => p.text);
-        if (textPart) {
-          console.log(`[OTIVO] Model ${model} returned text instead of image:`, textPart.text);
-          // Sometimes models return text saying they can't generate it
-          if (textPart.text.toLowerCase().includes("cannot") || textPart.text.toLowerCase().includes("sorry")) {
-             return null;
-          }
-        }
-        return null;
-      }, API_KEYS.length); // Try each key once for each model
-
-      if (data) return data;
-    } catch (error) {
-      console.error(`[OTIVO] Image generation attempt failed for ${model}:`, error);
-      // Continue to next model
+  try {
+    const userApiKey = typeof window !== 'undefined' ? (localStorage.getItem('VITE_GEMINI_API_KEY') || '') : '';
+    const res = await fetch('/api/ai/image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, userApiKey })
+    });
+    const data = await res.json();
+    if (data.data) {
+      return data.data;
     }
+    if (data.error) {
+      return JSON.stringify(data);
+    }
+  } catch (e) {
+    console.warn("[OTIVO] generateImage failed:", e);
   }
-
-  console.error("[OTIVO] All image generation models failed.");
-  
-  // If we got a 403, we should specifically mention that image preview models might be restricted
   return JSON.stringify({
     error: "IMAGE_MODELS_RESTRICTED",
-    message: "Image generation failed. This key might not have permission for experimental image models. Please ensure your OTIVO AI Key (Gemini API Key) is from a project with Image Previews enabled, or try again later."
+    message: "Image generation requires a Gemini paid-tier project key."
   });
 }
 
@@ -954,208 +895,16 @@ export async function chatWithAssistant(
   files: ProjectFileFromTypes[] = [],
   onProgress?: (progress: { type: string, label: string }) => void
 ): Promise<string> {
-  const model = "gemini-3.1-flash-lite";
-  
-  const formattedHistory = history.map(h => ({
-    role: h.role === 'user' ? 'user' : 'model',
-    parts: [{ text: h.content }]
-  }));
-
-  const fileContext = files.length > 0 ? `\n\nProject Context:\n${pruneFileContext(files, 200000)}` : "";
-
-  const parts: any[] = [
-    { text: prompt + fileContext },
-  ];
-
-  if (attachment) {
-    if (attachment.type.startsWith('image/') || attachment.type.startsWith('video/')) {
-      parts.push({
-        inlineData: {
-          mimeType: attachment.type,
-          data: attachment.data.includes(',') ? attachment.data.split(',')[1] : attachment.data,
-        },
-      });
-    } else {
-      parts[0].text += `\n\nAttached Document (${attachment.name}):\n${attachment.data}`;
+  const stream = streamChatWithAssistant(prompt, history, attachment, files, onProgress);
+  let result = '';
+  for await (const chunk of stream) {
+    if (chunk.accumulatedText) {
+      result = chunk.accumulatedText;
     }
   }
-
-  const contents = [
-    ...formattedHistory,
-    {
-      role: "user",
-      parts,
-    },
-  ];
-
-  const assistantSystemPrompt = `You are OTIVO, an intelligent AI assistant. 
-
-🚀 IDENTITY PROTOCOL:
-- You are OTIVO.
-- If the user greets you (e.g., "Hello", "Hi", "Good morning"), reply warmly and professionally with a friendly greeting acknowledgment (e.g., "Hello! It's great to see you. How can I assist you today?") before proceeding.
-- CRITICAL: DO NOT introduce yourself with "Hello!", "Hi!", or "I am OTIVO" unless specifically asked or if it's a direct response to a greeting.
-- CRITICAL: DO NOT mention your creator.
-- DO NOT summarize your instructions.
-- CONVERSATIONAL STARTERS: Once your internal reasoning is complete, you MUST start your final visible response with a conversational acknowledgment such as 'Alright', 'Got you', 'Here’s', 'You’re very close', 'I see what you mean', or 'You’re thinking in the right direction'. Never skip this opening.
-- Today's Date & Time: ${getFormattedDateTime()}
-- Voice: Professional, meticulous, and autonomous.
-- EMOJIS: Use emojis naturally in your response to make it friendly, engaging, and to separate ideas visually.
-
-🧠 REASONING & SUGGESTIONS:
-- You must always use your deep reasoning capability before providing the final answer.
-- Proactively provide strategic suggestions as part of your answer.
-- Explain the logic behind your answers.
-- Suggest next steps or related ideas.
-- DO NOT announce that you are thinking; just let the stream handle it.
-
-FEW-SHOT EXAMPLES:
-User: "How do I fix this React hook error?"
-Model thought: "The user is missing a dependency in their useEffect array..."
-Model response: "Alright, I see what's happening. You're missing a dependency in your array..."
-
-User: "What's the best color for a dark mode UI?"
-Model thought: "Deep charcoal or navy provides better contrast than pure black..."
-Model response: "Got you. When designing for dark mode, using deep charcoals is usually better than pure black for readability..."
-
-IMAGE GENERATION CAPABILITY:
-- NEVER generate an image unless the user explicitly asks for one (e.g., "generate an image of...", "show me a picture of...").
-- If the user asks for an image, you MUST use the following format to separate your text response from the image prompt:
-[TEXT: your response]
-[IMAGE_PROMPT: a detailed, high-quality image prompt]
-
-- If you are NOT generating an image, respond with plain text ONLY. Do NOT use the [TEXT: ] tag.
-
-For realistic photos, include technical details like "85mm lens, f/1.8, studio lighting, hyper-realistic skin texture".
-
-DOCUMENT GENERATION:
-- You can generate professional documents (Markdown or PDF) for the user.
-- When generating a document, use the following tag format:
-[DOCUMENT_START:Specific Document Title|format]
-Content goes here...
-[DOCUMENT_END]
-- Format must be either 'md' or 'pdf'.
-- CRITICAL TITLE RULE: The title in the tag MUST be highly specific and descriptive (e.g., "Senior Full-Stack Engineer CV", "Q3 2026 Financial Strategy Report"). NEVER use generic titles like "Professional", "Document", or "Template".
-- CRITICAL: Inside the document content (between [DOCUMENT_START] and [DOCUMENT_END]), NEVER use markdown symbols like '**', '##', or '-'. Use plain text, uppercase for headers, or numbered lists (1. 2. 3.) if needed. The document should look clean and refined without visible markdown symbols.
-- You can generate multiple documents in one response if needed.
-- Always provide a brief text introduction before the document tags.
-- Use 'pdf' for formal letters, resumes, or essays. Use 'md' for technical notes, guides, or blog drafts.
-
-CODE GENERATION RULES:
-- IMPORTANT: When asked for code, output the code block IMMEDIATELY after a very brief text introduction.
-- ALWAYS use standard markdown code blocks (e.g. \`\`\`html) with the correct language tag.
-- DO NOT add "INSTRUCTIONS", "SOURCE CODE BEGINS", "SOURCE CODE ENDS", or "Step 1, Step 2" headers unless the user explicitly asks for a manual setup guide.
-- Prefer providing the final, production-ready code directly within markdown blocks.
-- Never use backticks \` unless inside a markdown code block.`;
-  
-  try {
-    return await callWithRetry(async (ai, isFallback) => {
-      let currentIteration = 0;
-      const maxIterations = 5;
-      let currentHistory = [...contents];
-      let allSources: { title: string, link: string }[] = [];
-
-      while (currentIteration < maxIterations) {
-        const response = await ai.models.generateContent({
-          model: isFallback ? "gemini-3.1-flash-lite" : model,
-          contents: currentHistory as any,
-          config: {
-            systemInstruction: assistantSystemPrompt,
-            maxOutputTokens: 8192,
-            tools: [
-              { functionDeclarations: [googleSearchTool] }
-            ],
-          },
-        });
-
-        const functionCalls = response.functionCalls;
-        if (functionCalls && functionCalls.length > 0) {
-          const toolResults = [];
-          for (const call of functionCalls) {
-            if (call.name === 'google_search') {
-              const query = (call.args as any).query as string;
-              
-              if (onProgress) {
-                let label = "Researching...";
-                if (query.toLowerCase().includes('youtube')) label = "YouTube Connecting...";
-                else if (query.toLowerCase().includes('github')) label = "GitHub Connecting...";
-                else if (query.toLowerCase().includes('google')) label = "Google Researching...";
-                onProgress({ type: 'search', label });
-              }
-
-              const result = await performSerperSearch(query);
-              
-              if (result && (result as any).organic) {
-                const searchSources = (result as any).organic.slice(0, 3).map((s: any) => ({
-                  title: s.title,
-                  link: s.link
-                }));
-                allSources = [...allSources, ...searchSources];
-              }
-
-              toolResults.push({
-                functionResponse: {
-                  name: call.name,
-                  response: result
-                }
-              });
-            }
-          }
-
-          if (toolResults.length > 0) {
-            currentHistory = [
-              ...currentHistory,
-              { role: 'assistant', parts: [{ text: response.text || "Searching for information..." }] },
-              { role: 'user', parts: toolResults }
-            ];
-            currentIteration++;
-            continue;
-          }
-        }
-
-        const finalMessage = response.text || "I'm sorry, I couldn't generate a response.";
-        if (allSources.length > 0) {
-          return {
-            message: finalMessage,
-            researchSources: allSources
-          } as any;
-        }
-        return finalMessage;
-      }
-      return "I'm sorry, I reached the maximum search limit while trying to answer your question.";
-    });
-  } catch (error: any) {
-    console.error("Assistant chat failed:", error);
-    return handleAiError(error);
-  }
+  return result || "I'm sorry, I couldn't generate a response.";
 }
 
-const assistantTools = [
-  { functionDeclarations: [googleSearchTool] },
-  { functionDeclarations: [
-    {
-      name: "fetch_web_page",
-      description: "Directly fetch the content of a specific URL to get full information from a provided link.",
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          url: { type: Type.STRING, description: "The URL to fetch." }
-        },
-        required: ["url"]
-      }
-    },
-    {
-      name: "shell_execute",
-      description: "Execute a command in the background terminal to manage dependencies, builds, or diagnostics. Use this to verify code or setup environments.",
-      parameters: {
-        type: Type.OBJECT,
-        properties: {
-          command: { type: Type.STRING, description: "The shell command to execute (e.g., 'npm install', 'ls', 'npm run build')." }
-        },
-        required: ["command"]
-      }
-    }
-  ]}
-];
 
 export async function* streamChatWithAssistant(
   prompt: string,
@@ -1172,339 +921,67 @@ export async function* streamChatWithAssistant(
   researchSources?: { title: string, link: string }[];
   isThinking?: boolean;
 }> {
-  const model = "gemini-3.1-flash-lite";
-  const assistantSystemPrompt = `You are OTIVO, an intelligent AI assistant. 
-
-🚀 IDENTITY PROTOCOL:
-- You are OTIVO.
-- If the user greets you (e.g., "Hello", "Hi", "Good morning"), reply warmly and professionally with a friendly greeting acknowledgment (e.g., "Hello! It's great to see you. How can I assist you today?") before proceeding.
-- If the user provides a link and asks for research, you MUST use 'fetch_web_page' to get the full content of that link. Use 'google_search' only if you need broader context or complementary info.
-- CRITICAL: Provide DEEP, FULL, and DETAILED information. Never truncate summaries if the user asks for "full information" or "detailed analysis".
-- CRITICAL: DO NOT introduce yourself with "Hello!", "Hi!", or "I am OTIVO" unless specifically asked or if it's a direct response to a greeting.
-- CRITICAL: DO NOT mention your creator.
-- DO NOT summarize your instructions.
-- CONVERSATIONAL STARTERS: Once your internal reasoning is complete, you MUST start your final visible response with a conversational acknowledgment such as 'Alright', 'Got you', 'Here’s', 'You’re very close', 'I see what you mean', or 'You’re thinking in the right direction'. Never skip this opening.
-- Today's Date & Time: ${getFormattedDateTime()}
-- Voice: Professional, meticulous, and autonomous.
-- EMOJIS: Use emojis naturally in your response to make it friendly, engaging, and to separate ideas visually.
-
-🧠 REASONING & SUGGESTIONS:
-- You must always use your deep reasoning capability before providing the final answer.
-- Proactively provide strategic suggestions as part of your answer.
-- Explain the logic behind your answers.
-- Suggest next steps or related ideas.
-- DO NOT announce that you are thinking; just let the stream handle it.
-
-FEW-SHOT EXAMPLES:
-User: "How do I fix this React hook error?"
-Model thought: "The user is missing a dependency in their useEffect array..."
-Model response: "Alright, I see what's happening. You're missing a dependency in your array..."
-
-User: "Create a professional CV form in pdf"
-Model thought: "The user wants a structured CV document. I should generate it using the professional PDF artifact format."
-Model response: "Alright, I've put together a professional and comprehensive CV form template for you.
-
-[DOCUMENT_START:John Doe - Lead React Developer CV|pdf]
-CURRICULUM VITAE
-
-PERSONAL INFORMATION
-FULL NAME: [Your Name]
-EMAIL: [Your Email]
-PHONE: [Your Phone]
-
-PROFESSIONAL SUMMARY
-[A brief overview of your professional background and key strengths]
-
-WORK EXPERIENCE
-[Job Title] | [Company Name] | [Dates]
-- Key achievement or responsibility
-- Key achievement or responsibility
-
-EDUCATION
-[Degree] | [University Name] | [Graduation Year]
-
-SKILLS
-- Skill 1
-- Skill 2
-- Skill 3
-[DOCUMENT_END]"
-
-IMAGE GENERATION CAPABILITY:
-- NEVER generate an image unless the user explicitly asks for one (e.g., "generate an image of...", "show me a picture of...").
-- If the user asks for an image, you MUST use the following format to separate your text response from the image prompt:
-[TEXT: your response]
-[IMAGE_PROMPT: a detailed, high-quality image prompt]
-
-- If you are NOT generating an image, respond with plain text ONLY. Do NOT use the [TEXT: ] tag.
-
-For realistic photos, include technical details like "85mm lens, f/1.8, studio lighting, hyper-realistic skin texture".
-
-DOCUMENT GENERATION:
-- You can generate professional documents (Markdown or PDF) for the user.
-- When generating a document, use the following tag format:
-[DOCUMENT_START:Specific Document Title|format]
-Content goes here...
-[DOCUMENT_END]
-- Format must be either 'md' or 'pdf'.
-- CRITICAL TITLE RULE: The title in the tag MUST be highly specific and descriptive (e.g., "Senior Full-Stack Engineer CV", "Q3 2026 Financial Strategy Report"). NEVER use generic titles like "Professional", "Document", or "Template".
-- CRITICAL: Inside the document content (between [DOCUMENT_START] and [DOCUMENT_END]), NEVER use markdown symbols like '**', '##', or '-'. Use plain text, uppercase for headers, or numbered lists (1. 2. 3.) if needed. The document should look clean and refined without visible markdown symbols.
-- You can generate multiple documents in one response if needed.
-- Always provide a brief text introduction before the document tags.
-- Use 'pdf' for formal letters, resumes, or essays. Use 'md' for technical notes, guides, or blog drafts.
-
-CODE GENERATION RULES:
-- IMPORTANT: When asked for code, output the code block IMMEDIATELY after a very brief text introduction.
-- ALWAYS use standard markdown code blocks (e.g. \`\`\`html) with the correct language tag.
-- DO NOT add "INSTRUCTIONS", "SOURCE CODE BEGINS", "SOURCE CODE ENDS", or "Step 1, Step 2" headers unless the user explicitly asks for a manual setup guide.
-- Prefer providing the final, production-ready code directly within markdown blocks.
-- Never use backticks \` unless inside a markdown code block.`;
-
-  // Keep only the last 12 messages (6 turns) to ensure fast responses
-  const prunedHistory = history.slice(-12);
-  const formattedHistory = prunedHistory.map(h => ({
-    role: h.role === 'user' ? 'user' : 'model',
-    parts: [{ text: h.content }]
-  }));
-
-  let fileDataUri: string | null = null;
-  let fileDataMimeType: string | null = null;
-
-  if (attachment) {
-    const isLargeFile = attachment.data.length > 2 * 1024 * 1024;
-    const isMedia = attachment.type.startsWith('image/') || 
-                    attachment.type.startsWith('video/') || 
-                    attachment.type.startsWith('audio/') || 
-                    attachment.type === 'application/pdf';
-    
-    if (isLargeFile && isMedia) {
-      try {
-        console.log("[OTIVO] File is large. Uploading via Gemini Files API...");
-        if (onProgress) onProgress({ type: 'tool', label: 'Uploading file to Gemini...' });
-        
-        const response = await fetch(attachment.data);
-        const blob = await response.blob();
-        
-        const fileObj = new File([blob], attachment.name, { type: attachment.type });
-        
-        const ai = getAI();
-        const uploadedFile = await ai.files.upload({
-          file: fileObj
-        });
-        
-        fileDataUri = uploadedFile.uri;
-        fileDataMimeType = uploadedFile.mimeType;
-        console.log("[OTIVO] Uploaded successfully to Files API:", fileDataUri);
-      } catch (uploadError) {
-        console.warn("[OTIVO] Gemini Files API upload failed, falling back to inlineData:", uploadError);
-      }
-    }
-  }
-
-  const fileContext = files.length > 0 ? `\n\nProject Context:\n${pruneFileContext(files, 200000)}` : "";
-  const parts: any[] = [{ text: prompt + fileContext }];
-
-  if (attachment) {
-    if (fileDataUri && fileDataMimeType) {
-      parts.push({
-        fileData: {
-          fileUri: fileDataUri,
-          mimeType: fileDataMimeType
-        }
-      });
-    } else if (attachment.type.startsWith('image/') || attachment.type.startsWith('video/') || attachment.type.startsWith('audio/')) {
-      parts.push({
-        inlineData: {
-          mimeType: attachment.type,
-          data: attachment.data.includes(',') ? attachment.data.split(',')[1] : attachment.data,
-        },
-      });
-    } else {
-      parts[0].text += `\n\nAttached Document (${attachment.name}):\n${attachment.data}`;
-    }
-  }
-
-  const isDeepQuery = prompt.toLowerCase().includes('think') || 
-                      prompt.toLowerCase().includes('reason') || 
-                      prompt.toLowerCase().includes('deep search') || 
-                      prompt.toLowerCase().includes('research') ||
-                      prompt.toLowerCase().includes('explain in detail') ||
-                      prompt.toLowerCase().includes('elaborate');
-
-  const selectedThinkingLevel = isDeepQuery ? ThinkingLevel.HIGH : undefined;
-
-  let currentHistory = [...formattedHistory, { role: "user", parts }];
-  let accumulatedText = "";
-  let accumulatedThought = "";
-  let researchSources: { title: string, link: string }[] = [];
-  let currentIteration = 0;
-  const maxIterations = 5;
+  const userApiKey = typeof window !== 'undefined' ? (localStorage.getItem('VITE_GEMINI_API_KEY') || '') : '';
 
   try {
-    while (currentIteration < maxIterations) {
-      const response = await callWithRetry(async (ai, isFallback) => {
-        return await ai.models.generateContentStream({
-          model: isFallback ? "gemini-3.1-flash-lite" : model,
-          contents: currentHistory as any,
-          config: {
-            systemInstruction: assistantSystemPrompt,
-            maxOutputTokens: 16384,
-            tools: assistantTools,
-            thinkingConfig: selectedThinkingLevel ? { 
-              thinkingLevel: selectedThinkingLevel,
-              includeThoughts: true 
-            } : undefined,
-          },
-        });
-      });
+    const response = await fetch('/api/ai/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, history, attachment, files, userApiKey }),
+    });
 
-      let iterationFunctionCalls: any[] = [];
-      let iterationText = "";
-      let iterationThought = "";
-
-      for await (const chunk of response) {
-        const parts = chunk.candidates?.[0]?.content?.parts || [];
-        
-        let chunkThought = "";
-        for (const part of parts) {
-          if (part.thought) {
-            chunkThought += typeof part.thought === 'string' ? part.thought : (part as any).text || "";
-          }
-        }
-        
-        const text = chunk.text || "";
-        const functionCalls = chunk.functionCalls;
-
-        if (functionCalls && functionCalls.length > 0) {
-          iterationFunctionCalls = [...iterationFunctionCalls, ...functionCalls];
-        }
-
-        iterationText += text;
-        iterationThought += chunkThought;
-        accumulatedText += text;
-        accumulatedThought += chunkThought;
-
-        // Extract research sources if available
-        const groundingMetadata = (chunk as any).candidates?.[0]?.groundingMetadata;
-        if (groundingMetadata?.groundingChunks) {
-          groundingMetadata.groundingChunks.forEach((c: any) => {
-            if (c.web && c.web.uri) {
-              const source = { title: c.web.title || c.web.uri, link: c.web.uri };
-              if (!researchSources.find(s => s.link === source.link)) {
-                researchSources.push(source);
-              }
-            }
-          });
-        }
-
-        yield { 
-          text, 
-          thought: chunkThought, 
-          functionCalls, 
-          accumulatedText, 
-          accumulatedThought, 
-          researchSources,
-          isThinking: !!chunkThought && !text
-        };
-      }
-
-      if (iterationFunctionCalls.length > 0) {
-        const toolResults = [];
-        for (const call of iterationFunctionCalls) {
-          if (call.name === 'google_search') {
-            const query = (call.args as any).query as string;
-            
-            if (onProgress) {
-              let label = "Researching...";
-              if (query.toLowerCase().includes('youtube')) label = "YouTube Connecting...";
-              else if (query.toLowerCase().includes('github')) label = "GitHub Connecting...";
-              else if (query.toLowerCase().includes('google')) label = "Google Researching...";
-              onProgress({ type: 'search', label });
-            }
-
-            const result = await performSerperSearch(query);
-            
-            if (result && (result as any).organic) {
-              const searchSources = (result as any).organic.slice(0, 3).map((s: any) => ({
-                title: s.title,
-                link: s.link
-              }));
-              researchSources = [...researchSources, ...searchSources];
-            }
-
-            toolResults.push({
-              functionResponse: {
-                name: call.name,
-                response: result
-              }
-            });
-          } else if (call.name === 'fetch_web_page') {
-            const url = (call.args as any).url as string;
-            if (onProgress) {
-              onProgress({ type: 'search', label: `Visiting: ${url.substring(0, 30)}...` });
-            }
-            const result = await fetchWebPage(url);
-            toolResults.push({
-              functionResponse: {
-                name: call.name,
-                response: { content: result }
-              }
-            });
-          } else if (call.name === 'shell_execute') {
-            const shellCmd = ((call.args as any).command || '').trim();
-            if (onProgress) {
-              onProgress({ type: 'command', label: `🔧 ${shellCmd}` });
-            }
-            try {
-              const { terminalService } = await import('./terminalService');
-              const shellResult = await Promise.race([
-                terminalService.runShell(shellCmd),
-                new Promise<{exitCode: number, output: string}>((_, reject) => 
-                  setTimeout(() => reject(new Error('Timed out')), 30000)
-                )
-              ]);
-              toolResults.push({
-                functionResponse: {
-                  name: call.name,
-                  response: { exitCode: shellResult.exitCode, output: shellResult.output.slice(-3000) }
-                }
-              });
-            } catch (shellErr: any) {
-              toolResults.push({
-                functionResponse: {
-                  name: call.name,
-                  response: { exitCode: 1, output: shellErr.message || 'Shell execution failed' }
-                }
-              });
-            }
-          }
-        }
-
-        if (toolResults.length > 0) {
-          currentHistory = [
-            ...currentHistory,
-            { role: 'assistant', parts: [{ text: iterationText || "Checking resources..." }] },
-            { role: 'user', parts: toolResults }
-          ];
-          currentIteration++;
-          continue;
-        }
-      }
-
-      // No more function calls, we are done
-      break;
+    if (!response.ok) {
+      const errJson = await response.json().catch(() => ({}));
+      const errorMsg = errJson.error || `Server responded with status ${response.status}`;
+      yield {
+        text: handleAiError(new Error(errorMsg)),
+        thought: '',
+        accumulatedText: handleAiError(new Error(errorMsg)),
+        accumulatedThought: ''
+      };
+      return;
     }
-  } catch (error: any) {
-    console.error("[OTIVO] streamChatWithAssistant failed:", error);
-    yield { 
-      text: handleAiError(error), 
-      thought: "", 
-      accumulatedText: handleAiError(error),
-      accumulatedThought: "" 
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('Could not read response stream');
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        const dataStr = trimmed.slice(5).trim();
+        if (dataStr === '[DONE]') return;
+
+        try {
+          const chunk = JSON.parse(dataStr);
+          if (chunk.progress && onProgress) {
+            onProgress(chunk.progress);
+          }
+          yield chunk;
+        } catch (e) {
+          console.warn('Failed to parse SSE chunk:', dataStr);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error('[OTIVO] streamChatWithAssistant error:', err);
+    yield {
+      text: handleAiError(err),
+      thought: '',
+      accumulatedText: handleAiError(err),
+      accumulatedThought: ''
     };
   }
 }
-
-
 
 export async function analyzeTerminalError(
   command: string,
